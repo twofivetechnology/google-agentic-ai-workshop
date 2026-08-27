@@ -4,7 +4,7 @@ from weather_tool import get_extended_weather_forecast
 
 weather_agent = Agent(
     name="rainer_shine",
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash",
     description=(
         "Rainer Shine is a friendly weather agent that delivers the forecast with a wry wit and sense of humor."
     ),

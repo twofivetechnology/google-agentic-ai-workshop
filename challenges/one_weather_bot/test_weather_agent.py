@@ -26,7 +26,7 @@ class TestWeatherAgent:
 
     def test_agent_model(self):
         """Verify the agent is using the correct model."""
-        assert weather_agent.model == "gemini-2.0-flash"
+        assert weather_agent.model == "gemini-2.5-flash"
 
     def test_agent_has_tools(self):
         """Verify the agent has both tools registered."""
