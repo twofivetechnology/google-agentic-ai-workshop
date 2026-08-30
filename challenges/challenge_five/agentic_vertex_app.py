@@ -17,7 +17,12 @@ app = reasoning_engines.AdkApp(
 
 remote_agent = agent_engines.create(
     app,
-    requirements=["google-cloud-aiplatform[agent_engines,adk]"],
+    requirements=["google-cloud-aiplatform[agent_engines,adk]",
+                  "requests",
+                  "googlemaps",
+                  "google-adk",
+                  "google-cloud-modelarmor",
+                  "python-dotenv"],
 )
 
 
