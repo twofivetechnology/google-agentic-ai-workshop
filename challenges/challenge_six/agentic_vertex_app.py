@@ -2,10 +2,8 @@ import json
 from vertexai.preview import reasoning_engines
 import vertexai
 from vertexai import agent_engines
-from google.adk.agents import LlmAgent, SequentialAgent
+from google.adk.agents import LlmAgent, SequentialAgent, Agent
 from google.adk.tools import agent_tool, google_search
-from critique_agent import critique_agent
-from refine_agent import refine_agent
 import logging
 import os
 from typing import Optional
@@ -14,9 +12,12 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.models import LlmResponse, LlmRequest
 from google.cloud import modelarmor_v1
 import googlemaps
-from typing import Optional, Tuple
 import requests
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
+
+# Initialize the client with your Google Maps API key
+API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+gmaps = googlemaps.Client(key=API_KEY)
 
 def get_map_routes(
     lat: float,
@@ -137,10 +138,6 @@ def get_extended_weather_forecast(lat: float, lon: float) -> Optional[List[Dict[
         print(f"Error parsing weather data: {e}")
         return None
 
-# Initialize the client with your Google Maps API key
-API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-gmaps = googlemaps.Client(key=API_KEY)
-
 def get_lat_lon(location: str) -> Optional[Tuple[float, float]]:
     """
     Fetch the latitude and longitude of a named location using the Google Maps Geocoding API.
@@ -197,11 +194,6 @@ def is_inside_us(address_components):
             long_name = component.get("long_name", "")
             return short_name == "US" or long_name == "United States"
     return False
-
-_MODEL_ARMOR_CLIENT = modelarmor_v1.ModelArmorClient(client_options={
-        "api_endpoint": "modelarmor.us-central1.rep.googleapis.com"
-    })
-_MODEL_ARMOR_TEMPLATE = "projects/qwiklabs-gcp-03-18da3cda13cf/locations/us-central1/templates/challenge_two"
 
 logger = logging.getLogger(__name__)
 
@@ -274,12 +266,14 @@ def check_user_input(user_text: str) -> Optional[LlmResponse]:
     """Uses Google Cloud Model Armor to evaluate whether the user's message is safe."""
     try:
         request = modelarmor_v1.SanitizeUserPromptRequest(
-            name=_MODEL_ARMOR_TEMPLATE,
+            name="projects/qwiklabs-gcp-03-18da3cda13cf/locations/us-central1/templates/challenge_two",
             user_prompt_data=modelarmor_v1.DataItem(text=user_text),
         )
+        _MODEL_ARMOR_CLIENT = modelarmor_v1.ModelArmorClient(client_options={
+            "api_endpoint": "modelarmor.us-central1.rep.googleapis.com"
+        })
         response = _MODEL_ARMOR_CLIENT.sanitize_user_prompt(request)
         result = response.sanitization_result
-
         if result.filter_match_state == modelarmor_v1.FilterMatchState.MATCH_FOUND:
             matched = [
                 f.display_name
@@ -358,8 +352,6 @@ map_agent = Agent(
         If asked about non-map topics, politely redirect the conversation back to weather."""
     ),
     tools=[get_lat_lon, get_map_routes],
-    before_model_callback=chained_before_callback_with_location,
-    after_model_callback=log_model_response,
 )
 
 google_search_agent = LlmAgent(
@@ -378,8 +370,6 @@ google_search_agent = LlmAgent(
         6. If you cannot find a reliable answer, say so honestly rather than guessing."""
     ),
     tools=[google_search],
-    before_model_callback=chained_before_callback,
-    after_model_callback=log_model_response,
 )
 
 critique_agent = LlmAgent(
@@ -403,8 +393,6 @@ critique_agent = LlmAgent(
         - Do not rewrite the response yourself — only provide the critique.
         - If the response is of high quality and requires no changes, respond with: NO_CRITIQUE_NEEDED"""
     ),
-    before_model_callback=chained_before_callback,
-    after_model_callback=log_model_response,
 )
 
 refine_agent = LlmAgent(
@@ -428,8 +416,6 @@ refine_agent = LlmAgent(
         6. Do not include meta-commentary such as 'Here is the refined response' —
            output only the improved response itself."""
     ),
-    before_model_callback=chained_before_callback,
-    after_model_callback=log_model_response,
 )
 
 multi_agent = LlmAgent(
@@ -457,8 +443,6 @@ multi_agent = LlmAgent(
     ),
     tools=[agent_tool.AgentTool(google_search_agent)],
     sub_agents=[weather_agent, map_agent],
-    before_model_callback=chained_before_callback,
-    after_model_callback=log_model_response,
 )
 
 def append_to_state(tool_context, field, response):
@@ -474,8 +458,6 @@ refined_response_team = SequentialAgent(
         critique_agent,
         refine_agent,
     ],
-    before_model_callback=chained_before_callback,
-    after_model_callback=log_model_response,
 )
 
 main_agent = LlmAgent(
@@ -503,6 +485,8 @@ main_agent = LlmAgent(
     ),
     tools=[append_to_state],
     sub_agents=[refined_response_team],
+    before_model_callback=chained_before_callback,
+    after_model_callback=log_model_response,
 )
 
 vertexai.init(
